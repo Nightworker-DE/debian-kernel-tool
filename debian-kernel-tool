@@ -45,7 +45,7 @@ class KernelRow(Adw.ActionRow):
 
 class KernelManager(Adw.ApplicationWindow):
     def __init__(self, **kwargs):
-        super().__init__(title="GuideOS Kernel Tool", **kwargs)
+        super().__init__(title="Debian Kernel Tool", **kwargs)
         self.set_default_size(600, 500)
 
         # Haupt-Layout
