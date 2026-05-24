@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0.1
+Name=Debian Kernel-Tool
+Name[de]=Debian Kernel-Tool
+Comment=Kernel entfernen
+Exec=debian-kernel-tool
+Icon=debian-kernel-tool
+Terminal=false
+Type=Application
+Categories=GNOME;Utility;X-GNOME-Utilities;
+

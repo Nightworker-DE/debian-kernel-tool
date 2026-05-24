@@ -1,0 +1,16 @@
+Source: debian-kernel-tool
+Section: utils
+Priority: optional
+Maintainer: Nightworker
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.5.0
+
+Package: guideos-kernel-tool
+Section: utils
+Priority: optional
+Architecture: all
+Depends: python3, python3-gi, gir1.2-gtk-3.0, apt
+Description: Grafisches Kernel-Tool für GuideOS
+ Ein einfaches GTK4-Tool zum Auflisten und sicheren Entfernen
+ alter Linux-Kernel. Schützt den aktuell laufenden Kernel
+ vor versehentlichem Löschen.

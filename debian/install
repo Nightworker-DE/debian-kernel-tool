@@ -1,0 +1,4 @@
+debian-kernel-tool         usr/bin/
+debian-kernel-tool.desktop usr/share/applications/
+debian-kernel-tool.png     usr/share/pixmaps/
+
