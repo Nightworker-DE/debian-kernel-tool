@@ -5,13 +5,30 @@ import subprocess
 import threading
 import gi
 
-# Root-Check und Re-Exec (bleibt logisch gleich)
+# Globale Variable für das Farbschema
+user_color_scheme = 0  # 0 = Default, 1 = Prefer Dark, 2 = Prefer Light
+
 def check_root():
+    global user_color_scheme
+
     if os.geteuid() != 0:
+        try:
+            # Wir lesen den exakten Integer-Wert des GNOME-Farbschemas aus
+            # 0: Default, 1: Prefer Dark, 2: Prefer Light
+            cmd = ["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"]
+            res = subprocess.check_output(cmd, text=True).strip().strip("'")
+            if "prefer-dark" in res:
+                user_color_scheme = 1
+            elif "prefer-light" in res:
+                user_color_scheme = 2
+        except Exception:
+            pass
+
         script_path = os.path.abspath(sys.argv[0])
         current_env = os.environ.copy()
         display = current_env.get("DISPLAY", ":0")
         xauth = current_env.get("XAUTHORITY", os.path.expanduser("~/.Xauthority"))
+        xdg_runtime = current_env.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
 
         try:
             os.execvp("pkexec", [
@@ -19,18 +36,29 @@ def check_root():
                 "env",
                 f"DISPLAY={display}",
                 f"XAUTHORITY={xauth}",
+                f"XDG_RUNTIME_DIR={xdg_runtime}",
+                f"USER_COLOR_SCHEME={user_color_scheme}",
                 sys.executable,
                 script_path
             ] + sys.argv[1:])
         except Exception as e:
             print(f"Fehler: Root-Rechte konnten nicht erlangt werden: {e}")
             sys.exit(1)
+    else:
+        # Als Root angekommen: Wir lesen den übergebenen Wert aus
+        # WICHTIG: Kein Setzen von os.environ["GTK_THEME"] mehr, um das Theme nicht zu zerstören!
+        env_scheme = os.environ.get("USER_COLOR_SCHEME", "0")
+        user_color_scheme = int(env_scheme)
 
 check_root()
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Gdk, GLib, Adw
+
+def kernel_sort_key(version_str):
+    ver = version_str.replace("linux-image", "").replace("-generic", "").strip("-")
+    return [int(c) if c.isdigit() else c for c in repr(ver).split('.')]
 
 class KernelRow(Adw.ActionRow):
     """Eigene Zeile für die Kernel-Liste"""
@@ -45,7 +73,7 @@ class KernelRow(Adw.ActionRow):
 
 class KernelManager(Adw.ApplicationWindow):
     def __init__(self, **kwargs):
-        super().__init__(title="Debian Kernel Tool", **kwargs)
+        super().__init__(title="GuideOS Kernel Tool", **kwargs)
         self.set_default_size(600, 500)
 
         # Haupt-Layout
@@ -84,7 +112,7 @@ class KernelManager(Adw.ApplicationWindow):
 
         # Progress & Action Bereich
         self.progress_bar = Gtk.ProgressBar()
-        self.progress_bar.set_opacity(0) # Unsichtbar am Anfang
+        self.progress_bar.set_opacity(0)
         vbox.append(self.progress_bar)
 
         self.remove_button = Gtk.Button(label="Ausgewählte Kernel entfernen")
@@ -96,7 +124,6 @@ class KernelManager(Adw.ApplicationWindow):
         self.populate_kernel_list()
 
     def populate_kernel_list(self):
-        # Liste leeren
         while (child := self.list_box.get_first_child()):
             self.list_box.remove(child)
 
@@ -105,10 +132,16 @@ class KernelManager(Adw.ApplicationWindow):
             cmd = "dpkg -l | grep -E '^(ii|rc)  linux-image-[0-9]' | awk '{print $2}'"
             kernels = subprocess.check_output(cmd, shell=True).decode("utf-8").splitlines()
 
-            for k in kernels:
-                if current_kernel not in k:
-                    row = KernelRow(k)
-                    self.list_box.append(row)
+            available_kernels = [k for k in kernels if current_kernel not in k]
+
+            try:
+                available_kernels.sort(key=kernel_sort_key, reverse=True)
+            except Exception:
+                available_kernels.sort(reverse=True)
+
+            for k in available_kernels:
+                row = KernelRow(k)
+                self.list_box.append(row)
         except Exception as e:
             print(f"Fehler beim Laden: {e}")
 
@@ -124,7 +157,6 @@ class KernelManager(Adw.ApplicationWindow):
             self.show_toast("Kein Kernel ausgewählt.")
             return
 
-        # GTK4 Dialog (Adw.MessageDialog)
         self.confirm_dialog = Adw.MessageDialog(
             transient_for=self,
             heading="Tiefenreinigung bestätigen?",
@@ -159,7 +191,6 @@ class KernelManager(Adw.ApplicationWindow):
     def run_removal_thread(self, kernel_list):
         purge_targets = [f"'*{k.replace('linux-image-', '')}*'" for k in kernel_list]
         targets_string = " ".join(purge_targets)
-
         script = f"export DEBIAN_FRONTEND=noninteractive; apt-get purge -y {targets_string} && apt-get autoremove -y --purge && update-grub"
 
         try:
@@ -183,6 +214,17 @@ class KernelApp(Adw.Application):
         super().__init__(application_id="com.guideos.kerneltool")
 
     def do_activate(self):
+        style_manager = Adw.StyleManager.get_default()
+
+        # Hier weisen wir Libadwaita sauber an, das echte Theme zu nutzen,
+        # OHNE das GTK-Layout zu beschädigen.
+        if user_color_scheme == 1:
+            style_manager.set_color_scheme(Adw.ColorScheme.PREFER_DARK)
+        elif user_color_scheme == 2:
+            style_manager.set_color_scheme(Adw.ColorScheme.PREFER_LIGHT)
+        else:
+            style_manager.set_color_scheme(Adw.ColorScheme.DEFAULT)
+
         win = KernelManager(application=self)
         win.present()
 
